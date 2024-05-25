@@ -7,20 +7,27 @@ export const blogRouter = new Hono<{
     Bindings: {
         DATABASE_URL: string
         JWT_SECRET: string
+    },
+    Variables: {
+        userId: string
     }
 }>()
 
 blogRouter.use('/*', async (c, next) => {
-	const jwt = c.req.header("authorization") || "";
-	const response = await verify(jwt, c.env.JWT_SECRET)
+	const token = c.req.header("authorization") || "";
+	const user = await verify(token, c.env.JWT_SECRET)
 
-	if(response.id) {
-		next()
-	} else {
-		c.status(403)
-		return c.json({ error: "Unauthorized User" })
-	}
-})
+	if(user) {
+        
+        c.set("userId", user.id);
+        await next();
+    } else {
+        c.status(403); 
+        return c.json({
+            message: "You are unable to log in"
+        })
+    }
+}) 
 
 // blogRouter.get('/:id', (c) => {
 // 	const id = c.req.param('id')
@@ -30,13 +37,14 @@ blogRouter.use('/*', async (c, next) => {
 
 blogRouter.post('/', async (c) => {
     const body = await c.req.json();
+    const userId = c.get("userId");
     const prisma = new PrismaClient({
         datasourceUrl: c.env.DATABASE_URL,
     }).$extends(withAccelerate());
 
     const post = await prisma.post.create({
         data: {
-            authorId: "1", 
+            authorId: userId, 
             title: body.title,
             content: body.content,
         }
@@ -68,8 +76,21 @@ blogRouter.put('/', async (c) => {
     })
 })
 
-blogRouter.get('/', async (c) => {
-    const body = await c.req.json();
+// I think need to add pagination (BKL)
+blogRouter.get('/bulk', async (c) => {
+    const prisma = new PrismaClient({
+        datasourceUrl: c.env.DATABASE_URL, 
+    }).$extends(withAccelerate());
+
+    const posts = await prisma.post.findMany();
+
+    return c.json({
+        posts
+    })
+})
+
+blogRouter.get('/:id', async (c) => {
+    const id = c.req.param("id");
     const prisma = new PrismaClient({
         datasourceUrl: c.env.DATABASE_URL,
     }).$extends(withAccelerate());
@@ -77,7 +98,7 @@ blogRouter.get('/', async (c) => {
     try {
         const post = await prisma.post.findFirst({
             where: {
-                id: body.id
+                id: id
             }
         })
     
@@ -91,4 +112,3 @@ blogRouter.get('/', async (c) => {
         })
     }
 })
-
